@@ -5,10 +5,8 @@ import os
 
 app = Flask(__name__)
 
-# 🔁 Your existing functions: scrape_instagram_profile, clean_instagram_data go here...
 def scrape_instagram_profile(username):
     url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
-
     headers = {
         "accept": "*/*",
         "accept-language": "en-US,en;q=0.9",
@@ -44,18 +42,14 @@ def scrape_instagram_profile(username):
         "is_verified": user.get("is_verified", False),
     }
 
-
     posts = []
     post_edges = user["edge_owner_to_timeline_media"]["edges"]
     for post_edge in post_edges:
         node = post_edge["node"]
-
-        # Get caption if available
         caption = ""
         caption_edges = node.get("edge_media_to_caption", {}).get("edges", [])
         if caption_edges:
             caption = caption_edges[0]["node"]["text"]
-
         post_data = {
             "display_url": node.get("display_url"),
             "num_comments": node.get("edge_media_to_comment", {}).get("count", 0),
@@ -63,18 +57,15 @@ def scrape_instagram_profile(username):
             "caption": caption,
             "is_video": node.get("is_video", False)
         }
-
         if post_data["is_video"]:
             post_data["video_url"] = node.get("video_url", "")
             post_data["video_view_count"] = node.get("video_view_count", 0)
-
         posts.append(post_data)
 
     return {
         "profile_info": profile_info,
         "recent_posts": posts
     }
-
 
 def clean_instagram_data(data):
     profile = data["profile_info"]
@@ -104,21 +95,6 @@ def clean_instagram_data(data):
         "top_posts": top_posts
     }
 
-
-def save_to_json(data, filename):
-    if os.path.exists(filename):
-        with open(filename, "r", encoding="utf-8") as file:
-            existing = json.load(file)
-    else:
-        existing = {}
-
-    existing[data["username"]] = data
-
-    with open(filename, "w", encoding="utf-8") as file:
-        json.dump(existing, file, indent=2)
-        print(f"✅ Saved/Updated data to {filename}")
-
-
 @app.route("/scrape", methods=["POST"])
 def insta_scrape_api():
     try:
@@ -136,5 +112,7 @@ def insta_scrape_api():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
+# 🌐 Render-ready server
+PORT = int(os.environ.get("PORT", 5000))
 if __name__ == "__main__":
-    app.run(port=5005)
+    app.run(host="0.0.0.0", port=PORT)
