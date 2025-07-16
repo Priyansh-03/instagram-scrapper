@@ -95,7 +95,7 @@ def clean_instagram_data(data):
         "top_posts": top_posts
     }
 
-@app.route("/scrape", methods=["GET"])
+@app.route("/scrape", methods=["POST"])
 def insta_scrape_api():
     try:
         username = request.args.get("username")  # GET param
