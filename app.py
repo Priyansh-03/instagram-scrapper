@@ -95,10 +95,10 @@ def clean_instagram_data(data):
         "top_posts": top_posts
     }
 
-@app.route("/scrape", methods=["POST"])
+@app.route("/scrape", methods=["GET"])
 def insta_scrape_api():
     try:
-        username = request.json.get("username")
+        username = request.args.get("username")  # GET param
         if not username:
             return jsonify({"error": "Username is required"}), 400
 
