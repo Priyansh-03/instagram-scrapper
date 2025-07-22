@@ -1,118 +1,59 @@
 from flask import Flask, request, jsonify
 import requests
-import json
-import os
+import re
 
 app = Flask(__name__)
 
+def extract_username_from_url(insta_url: str) -> str:
+    """
+    Extracts the username from a full Instagram profile URL.
+    Example: https://www.instagram.com/tulipgardenresort/ -> tulipgardenresort
+    """
+    match = re.search(r"instagram\.com/([^/?]+)", insta_url)
+    return match.group(1) if match else insta_url
+
 def scrape_instagram_profile(username):
-    url = f"https://www.instagram.com/api/v1/users/web_profile_info/?username={username}"
+    url = f"https://www.instagram.com/{username}/?__a=1&__d=dis"
     headers = {
-        "accept": "*/*",
-        "accept-language": "en-US,en;q=0.9",
-        "x-ig-app-id": "936619743392459",
-        "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/122 Safari/537.36",
-        "referer": f"https://www.instagram.com/{username}/",
-        "sec-fetch-dest": "empty",
-        "sec-fetch-mode": "cors",
-        "sec-fetch-site": "same-origin"
+        "User-Agent": "Mozilla/5.0",
     }
-
-    response = requests.get(url, headers=headers)
-    print(f"🔄 Status Code: {response.status_code}")
-
-    if response.status_code != 200:
-        print(f"❌ Error fetching data: {response.text}")
-        return None
 
     try:
-        user = response.json()["data"]["user"]
+        response = requests.get(url, headers=headers)
+        if response.status_code != 200:
+            return {"error": f"Failed to fetch profile. Status code: {response.status_code}"}
+
+        data = response.json()
+        return clean_instagram_data(data)
     except Exception as e:
-        print("❌ Exception while parsing response:", e)
-        return None
+        return {"error": str(e)}
 
-    profile_info = {
-        "username": username,
-        "biography": user.get("biography", ""),
-        "link_in_bio": user.get("bio_links")[0]["url"] if user.get("bio_links") else "",
-        "followers": user["edge_followed_by"]["count"],
-        "following": user["edge_follow"]["count"],
-        "num_posts": user["edge_owner_to_timeline_media"]["count"],
-        "profile_pic_url": user.get("profile_pic_url_hd", ""),
-        "is_verified": user.get("is_verified", False),
-    }
-
-    posts = []
-    post_edges = user["edge_owner_to_timeline_media"]["edges"]
-    for post_edge in post_edges:
-        node = post_edge["node"]
-        caption = ""
-        caption_edges = node.get("edge_media_to_caption", {}).get("edges", [])
-        if caption_edges:
-            caption = caption_edges[0]["node"]["text"]
-        post_data = {
-            "display_url": node.get("display_url"),
-            "num_comments": node.get("edge_media_to_comment", {}).get("count", 0),
-            "num_likes": node.get("edge_liked_by", {}).get("count", 0),
-            "caption": caption,
-            "is_video": node.get("is_video", False)
-        }
-        if post_data["is_video"]:
-            post_data["video_url"] = node.get("video_url", "")
-            post_data["video_view_count"] = node.get("video_view_count", 0)
-        posts.append(post_data)
-
+def clean_instagram_data(raw_data):
+    user = raw_data.get("graphql", {}).get("user", {})
     return {
-        "profile_info": profile_info,
-        "recent_posts": posts
+        "username": user.get("username"),
+        "full_name": user.get("full_name"),
+        "bio": user.get("biography"),
+        "followers": user.get("edge_followed_by", {}).get("count"),
+        "following": user.get("edge_follow", {}).get("count"),
+        "total_posts": user.get("edge_owner_to_timeline_media", {}).get("count"),
+        "profile_picture": user.get("profile_pic_url_hd"),
+        "is_verified": user.get("is_verified"),
     }
 
-def clean_instagram_data(data):
-    profile = data["profile_info"]
-    posts = data["recent_posts"]
+@app.route("/")
+def home():
+    return jsonify({"status": "ok", "message": "Insta Scraper API is running 🚀"})
 
-    top_posts = []
-    for post in posts:
-        p = {
-            "image": post.get("display_url"),
-            "likes": post.get("num_likes"),
-            "comments": post.get("num_comments"),
-            "caption": post.get("caption", "")
-        }
-        if post.get("is_video"):
-            p["video_url"] = post.get("video_url", "")
-            p["views"] = post.get("video_view_count", 0)
-        top_posts.append(p)
+@app.route("/scrape", methods=["GET"])
+def scrape():
+    username_or_url = request.args.get("username")
+    if not username_or_url:
+        return jsonify({"error": "Missing 'username' parameter"}), 400
 
-    return {
-        "username": profile["username"],
-        "bio": profile["biography"],
-        "followers": profile["followers"],
-        "following": profile["following"],
-        "total_posts": profile["num_posts"],
-        "profile_picture": profile["profile_pic_url"],
-        "verified": profile["is_verified"],
-        "top_posts": top_posts
-    }
+    username = extract_username_from_url(username_or_url)
+    result = scrape_instagram_profile(username)
+    return jsonify(result)
 
-@app.route("/scrape", methods=["POST"])
-def insta_scrape_api():
-    try:
-        username = request.args.get("username")  # GET param
-        if not username:
-            return jsonify({"error": "Username is required"}), 400
-
-        result = scrape_instagram_profile(username)
-        if not result:
-            return jsonify({"error": "Failed to fetch data"}), 500
-
-        cleaned = clean_instagram_data(result)
-        return jsonify(cleaned), 200
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-# 🌐 Render-ready server
-PORT = int(os.environ.get("PORT", 5000))
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=PORT)
+    app.run(host="0.0.0.0", port=5000)
